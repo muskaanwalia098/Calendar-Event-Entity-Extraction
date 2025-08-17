@@ -1,0 +1,87 @@
+Two Approaches for Data Augmentation and Training
+================================================
+
+Context
+- Goal: Extract structured calendar JSON from natural-language text using SmolLM-360M with LoRA adapters.
+- Repo: Calendar-Event-Entity-Extraction/
+- Final, working adapters: simple_output/checkpoint-277/
+
+Approach A — Data-Driven Augmentation Pipeline (augmentation/main.py)
+- Input schema: Each row has {"event_text", "output"} where output contains the 8 target keys
+  [action, date, time, attendees, location, duration, recurrence, notes].
+- Pipeline steps:
+  1) Canonicalize/normalize: enforce keys; normalize date/time (DD/MM/YYYY; 12-hour AM/PM).
+  2) Entity pools: build attendees/location pools from data.
+  3) One-per-row augmentation for diversity:
+     - Entity-swap: conservative whole-word replacement using pools (and update JSON accordingly).
+     - JSON→text render: render new natural text from the structured JSON (target unchanged).
+     - Randomly select at most one augmented variant per original row.
+  4) Optional Faker synthesis: add fully synthetic (event_text, output) pairs (configurable via --synth).
+  5) Deduplicate, sanitize, deterministic shuffle and 75/15/10 splits; drop near-duplicates across splits.
+- Outputs:
+  - data/processed/augmented.jsonl
+  - data/splits/{train.jsonl, eval.jsonl, test.jsonl}
+- Training used with this data:
+  - Working trainer: python -m src.simple_train (LoRA over SmolLM-360M, FP32 for stability on MPS/CPU).
+  - Key traits: prompt+JSON target, mask prompt tokens, dynamic padding, small batch w/ accumulation.
+  - Artifacts: adapters saved under simple_output/checkpoint-277/ (final/best retained).
+- Pros/Cons:
+  - Pros: Leverages real distributions (names/locations); style diversity with controlled variance.
+  - Cons: Limited by original data size; one-variant-per-row caps volume; entity swaps must be conservative.
+
+Approach B — Enhanced Synthetic Generator (create_enhanced_training_data.py)
+- Goal: Generate high-quality, diverse synthetic dataset beyond basic augmentations.
+- How it works:
+  - Rich vocabularies for actions, names, locations, durations, recurrence; multiple time formats.
+  - Template engine for natural-language phrasing with realistic variation; safe defaults for missing fields.
+  - Generates structured output with all 8 keys (values may be None); formats dates/times broadly.
+  - Produces chat-like records with messages: [{role: user, content: instruction}, {role: assistant, content: JSON}].
+- Outputs:
+  - data/processed/enhanced_augmented.jsonl (full synthetic set)
+  - data/splits/{train.jsonl, eval.jsonl, test.jsonl} (75/15/10)
+- Training compatibility:
+  - Can be consumed by the same simple_train pipeline as long as prompt construction matches the instruction used for synthetic samples (the project keeps a consistent extraction prompt: "Extract calendar information from: …\nCalendar JSON:").
+- Pros/Cons:
+  - Pros: Substantial data volume and diversity; explicit control over sparsity and field distributions.
+  - Cons: Risk of synthetic bias; requires careful prompt alignment so training/inference formats match.
+
+Evaluation (both approaches)
+- Baseline: python -m src.evaluate_baseline
+  - Uses base SmolLM-360M to generate; computes JSON parsing success and per-field correctness.
+- Comparison: python -m src.evaluate_finetuned
+  - Compares baseline vs adapters from simple_output/checkpoint-277 on a fixed subset.
+- Unified sampling report: python -m src.evaluate
+  - Draws a random sample (default 50) from data/splits/test.jsonl and outputs results to results/comparison_evaluation.json.
+- Metrics reported:
+  - json_validity: fraction of outputs that are valid JSON with all target keys.
+  - field_accuracy: micro-averaged correctness over the 8 fields.
+  - exact_match: fraction where predicted JSON matches target exactly.
+
+Training/Inference Summary
+- Base model: HuggingFaceTB/SmolLM-360M.
+- Fine-tuning: LoRA on attention projections; FP32 on CPU/MPS; adapters only (base frozen).
+- Working trainer: src/simple_train.py (preferred over the legacy Trainer path in src/train.py).
+- Inference:
+  - CLI demo: python -m src.test_model (loads base + adapters from simple_output/checkpoint-277).
+  - Programmatic: load base/tokenizer, then apply PEFT adapters; generate with deterministic decoding for JSON.
+
+Deployment Complete!
+📦 Model: https://huggingface.co/waliaMuskaan011/calendar-event-extractor-smollm
+🎮 Demo: https://huggingface.co/spaces/waliaMuskaan011/calendar-event-extraction-demo 
+
+Recommended Usage
+1) Build dataset
+   - Augmentation pipeline: python -m augmentation.main --synth 1000 --seed 42
+   - OR enhanced generator: python -m src.create_enhanced_training_data
+2) Train adapters
+   - python -m src.simple_train
+3) Evaluate
+   - python -m src.evaluate  # writes results/comparison_evaluation.json
+4) Test interactively
+   - python -m src.test_model
+
+Key Takeaways
+- Approach A (data-driven augmentation) preserves realism by perturbing true examples.
+- Approach B (enhanced synthetic) scales volume/diversity and improves coverage.
+- Simple LoRA training with careful masking and consistent prompts is robust on CPU/MPS.
+- The final adapters at simple_output/checkpoint-277/ deliver the best observed performance in this repo.
