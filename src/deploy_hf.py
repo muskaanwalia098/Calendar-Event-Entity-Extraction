@@ -8,13 +8,13 @@ interactive demonstration of the calendar event extraction capabilities.
 
 import os
 from pathlib import Path
-from huggingface_hub import HfApi, Repository, create_repo
+from huggingface_hub import HfApi, create_repo
 import shutil
 
 def deploy_model_to_hf(
     model_dir: str = "simple_output/checkpoint-277",
     repo_name: str = "calendar-event-extractor-smollm",
-    username: str = "muskaanwalia098",
+    username: str = "waliaMuskaan011",
     private: bool = False
 ):
     """Deploy the trained model to Hugging Face Hub."""
@@ -110,10 +110,7 @@ tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM-360M")
 model = PeftModel.from_pretrained(base_model, "{repo_id}")
 
 # Example usage
-prompt = '''Extract calendar fields from: "Meeting with John tomorrow at 2pm for 1 hour".
-Return ONLY valid JSON with keys [action,date,time,attendees,location,duration,recurrence,notes].
-Use null for unknown.
-'''
+prompt = 'Extract calendar information from: "Meeting with John tomorrow at 2pm for 1 hour"\\nCalendar JSON:'
 
 inputs = tokenizer(prompt, return_tensors="pt")
 outputs = model.generate(**inputs, max_new_tokens=150, temperature=0.0)
@@ -165,7 +162,7 @@ For more details, see the [training repository](https://github.com/muskaanwalia0
 
 def create_spaces_app(
     spaces_repo_name: str = "calendar-event-extraction-demo",
-    username: str = "muskaanwalia098",
+    username: str = "waliaMuskaan011",
     model_repo_id: str = None
 ):
     """Create a Gradio Spaces app for interactive demo."""
@@ -187,95 +184,107 @@ def create_spaces_app(
         print(f"❌ Error creating Spaces repo: {e}")
         return
     
-    # Create app.py for Gradio interface
-    app_content = f'''import gradio as gr
+    # Use the model repo ID or default
+    model_repo = model_repo_id or f"{username}/calendar-event-extractor-smollm"
+    
+    # Create app.py for Gradio interface - using the same approach as test_model.py
+    app_content = '''import gradio as gr
 import json
 import torch
-from functools import lru_cache
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-# Load model and tokenizer
-@lru_cache(maxsize=1)
+# Global variables for model and tokenizer
+model = None
+tokenizer = None
+
 def load_model():
-    print("Loading model...")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        "HuggingFaceTB/SmolLM-360M",
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto"
-    )
-    tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM-360M")
+    """Load the fine-tuned model and tokenizer."""
+    global model, tokenizer
+    
+    if model is not None and tokenizer is not None:
+        return model, tokenizer
+    
+    print("🔄 Loading fine-tuned model...")
+    
+    # Load base model and tokenizer
+    base_model_id = "HuggingFaceTB/SmolLM-360M"
+    tokenizer = AutoTokenizer.from_pretrained(base_model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # Load LoRA adapters
-    model = PeftModel.from_pretrained(base_model, "{model_repo_id or 'muskaanwalia098/calendar-event-extractor-smollm'}")
-    model.eval()
-    print("Model loaded successfully!")
+    # Load base model
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
+        torch_dtype=torch.float32,
+    )
+    
+    # Load fine-tuned adapter
+    model = PeftModel.from_pretrained(base_model, "''' + model_repo + '''")
+    
+    print("✅ Model loaded successfully!")
     return model, tokenizer
 
-model, tokenizer = load_model()
+def extract_json_from_text(text):
+    """Extract the first JSON object from text."""
+    try:
+        # Find first { and matching }
+        start = text.find('{')
+        if start == -1:
+            return None
+        
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == '{':
+                depth += 1
+            elif text[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    json_str = text[start:i+1]
+                    return json.loads(json_str)
+        return None
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
 
-def extract_calendar_event(event_text):
-    """Extract calendar information from natural language text."""
-    
+def predict_calendar_event(event_text):
+    """Extract calendar information from event text."""
     if not event_text.strip():
         return "Please enter some text describing a calendar event."
     
-    # Build prompt
-    prompt = f"""Extract calendar fields from: "{{event_text}}".
-Return ONLY valid JSON with keys [action,date,time,attendees,location,duration,recurrence,notes].
-Use null for unknown.
-"""
-    
     try:
-        # Tokenize and generate
-        inputs = tokenizer(prompt, return_tensors="pt")
-        inputs = {{k: v.to(model.device) for k, v in inputs.items()}}
+        # Load model
+        model, tokenizer = load_model()
         
+        # Create prompt - same format as test_model.py
+        prompt = f"Extract calendar information from: {event_text}\\nCalendar JSON:"
+        
+        # Tokenize
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True)
+        
+        # Generate
         with torch.no_grad():
             outputs = model.generate(
-                **inputs,
-                max_new_tokens=160,
-                temperature=0.0,
+                inputs.input_ids,
+                attention_mask=inputs.attention_mask,
+                max_new_tokens=150,
                 do_sample=False,
-                pad_token_id=tokenizer.eos_token_id
+                pad_token_id=tokenizer.eos_token_id,
             )
         
-        # Decode response
+        # Decode
         full_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        generated_text = full_response[len(prompt):].strip()
         
-        # Robustly find the first complete JSON object in the output
-        def _find_first_json(text: str):
-            start = text.find("{{")
-            if start == -1:
-                return None
-            depth = 0
-            for i in range(start, len(text)):
-                ch = text[i]
-                if ch == "{{":
-                    depth += 1
-                elif ch == "}}":
-                    depth -= 1
-                    if depth == 0:
-                        return text[start:i+1]
-            return None
-
-        json_part = _find_first_json(full_response)
-        if json_part is None and full_response.startswith(prompt):
-            json_part = _find_first_json(full_response[len(prompt):])
-
-        if json_part:
-            try:
-                parsed = json.loads(json_part)
-                return json.dumps(parsed, indent=2, ensure_ascii=False)
-            except json.JSONDecodeError:
-                return f"Generated (may need manual cleanup):\n{{json_part}}"
+        # Extract JSON
+        extracted_json = extract_json_from_text(generated_text)
+        
+        if extracted_json:
+            return json.dumps(extracted_json, indent=2, ensure_ascii=False)
         else:
-            return "No JSON found.\n" + full_response
+            return f"Could not extract valid JSON. Raw output: {generated_text[:200]}..."
             
     except Exception as e:
-        return f"Error processing request: {{str(e)}}"
+        return f"Error processing request: {str(e)}"
 
 # Create Gradio interface
 with gr.Blocks(title="Calendar Event Extractor", theme=gr.themes.Soft()) as demo:
@@ -317,21 +326,21 @@ with gr.Blocks(title="Calendar Event Extractor", theme=gr.themes.Soft()) as demo
         ],
         inputs=[input_text],
         outputs=[output_json],
-        fn=extract_calendar_event,
+        fn=predict_calendar_event,
         cache_examples=False
     )
     
     extract_btn.click(
-        fn=extract_calendar_event,
+        fn=predict_calendar_event,
         inputs=[input_text],
         outputs=[output_json]
     )
     
-    gr.Markdown("""
+    gr.Markdown(f"""
     ---
     **Model Details**: Fine-tuned SmolLM-360M using LoRA • **Dataset**: ~2500 calendar events • **Training**: Custom augmentation pipeline
     
-    [🔗 Model Card](https://huggingface.co/{model_repo_id or 'muskaanwalia098/calendar-event-extractor-smollm'}) • [💻 Training Code](https://github.com/muskaanwalia098/Calendar-Event-Entity-Extraction)
+    [🔗 Model Card](https://huggingface.co/''' + model_repo + ''') • [💻 Training Code](https://github.com/muskaanwalia098/Calendar-Event-Entity-Extraction)
     """)
 
 if __name__ == "__main__":
@@ -378,7 +387,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Deploy calendar event extraction model to Hugging Face")
     parser.add_argument("--model-dir", default="simple_output/checkpoint-277", help="Path to trained model directory")
-    parser.add_argument("--username", default="muskaanwalia098", help="Hugging Face username")
+    parser.add_argument("--username", default="waliaMuskaan011", help="Hugging Face username")
     parser.add_argument("--model-repo", default="calendar-event-extractor-smollm", help="Model repository name")
     parser.add_argument("--spaces-repo", default="calendar-event-extraction-demo", help="Spaces repository name")
     parser.add_argument("--private", action="store_true", help="Make repositories private")
@@ -406,6 +415,6 @@ if __name__ == "__main__":
         model_repo_id=model_repo_id
     )
     
-    print("\n🎉 Deployment Complete!")
+    print("\\n🎉 Deployment Complete!")
     print(f"📦 Model: https://huggingface.co/{model_repo_id}")
     print(f"🎮 Demo: https://huggingface.co/spaces/{spaces_repo_id}")
