@@ -277,12 +277,6 @@ tokenizer = AutoTokenizer.from_pretrained("models/best/")
 # Single inference
 result = infer("Meeting tomorrow at 3pm with the team")
 ```
-
-### API Deployment
-The trained model can be deployed as a REST API using FastAPI or served via Hugging Face Spaces for real-time calendar event extraction from natural language inputs.
-
 ---
 
 **Summary**: This project successfully implements a complete pipeline for fine-tuning SmolLM-360M on calendar event extraction, featuring sophisticated data augmentation, efficient LoRA/QLoRA training, comprehensive evaluation metrics, and a modular codebase ready for production deployment.
-
-
