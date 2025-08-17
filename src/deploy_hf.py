@@ -191,11 +191,12 @@ def create_spaces_app(
     app_content = f'''import gradio as gr
 import json
 import torch
+from functools import lru_cache
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
 # Load model and tokenizer
-@gr.utils.async_cache
+@lru_cache(maxsize=1)
 def load_model():
     print("Loading model...")
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -244,24 +245,34 @@ Use null for unknown.
         # Decode response
         full_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
         
-        # Extract JSON part (after the prompt)
-        response_start = full_response.find('"}}') 
-        if response_start != -1:
-            json_part = full_response[response_start + 2:].strip()
+        # Robustly find the first complete JSON object in the output
+        def _find_first_json(text: str):
+            start = text.find("{")
+            if start == -1:
+                return None
+            depth = 0
+            for i in range(start, len(text)):
+                ch = text[i]
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[start:i+1]
+            return None
+
+        json_part = _find_first_json(full_response)
+        if json_part is None and full_response.startswith(prompt):
+            json_part = _find_first_json(full_response[len(prompt):])
+
+        if json_part:
+            try:
+                parsed = json.loads(json_part)
+                return json.dumps(parsed, indent=2, ensure_ascii=False)
+            except json.JSONDecodeError:
+                return f"Generated (may need manual cleanup):\n{json_part}"
         else:
-            # Fallback: take everything after "Use null for unknown."
-            prompt_end = full_response.find("Use null for unknown.")
-            if prompt_end != -1:
-                json_part = full_response[prompt_end + len("Use null for unknown."):].strip()
-            else:
-                json_part = full_response.split("\\n")[-1].strip()
-        
-        # Try to parse as JSON for validation
-        try:
-            parsed = json.loads(json_part)
-            return json.dumps(parsed, indent=2, ensure_ascii=False)
-        except json.JSONDecodeError:
-            return f"Generated (may need manual cleanup):\\n{{json_part}}"
+            return "No JSON found.\n" + full_response
             
     except Exception as e:
         return f"Error processing request: {{str(e)}}"
@@ -366,7 +377,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Deploy calendar event extraction model to Hugging Face")
-    parser.add_argument("--model-dir", default="models/best", help="Path to trained model directory")
+    parser.add_argument("--model-dir", default="simple_output/checkpoint-277", help="Path to trained model directory")
     parser.add_argument("--username", default="muskaanwalia098", help="Hugging Face username")
     parser.add_argument("--model-repo", default="calendar-event-extractor-smollm", help="Model repository name")
     parser.add_argument("--spaces-repo", default="calendar-event-extraction-demo", help="Spaces repository name")

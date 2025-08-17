@@ -4,7 +4,7 @@ paths:
   eval: data/splits/eval.jsonl
   test: data/splits/test.jsonl
   outputs: models/
-  best_outputs: models/best/
+  best_outputs: simple_output/checkpoint-277/
 model:
   base_id: HuggingFaceTB/SmolLM-360M
   max_length: 384

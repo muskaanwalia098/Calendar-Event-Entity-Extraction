@@ -173,8 +173,8 @@ python -m src.evaluate_baseline
 # Fine-tuned vs baseline comparison (uses adapters in simple_output/checkpoint-277)
 python -m src.evaluate_finetuned
 
-# Quick single inference test
-python -m src.infer --model models/best/ --text "Meeting tomorrow at 2pm with John"
+# Quick single inference test (adapters)
+python -m src.infer --adapter simple_output/checkpoint-277 --text "Meeting tomorrow at 2pm with John"
 ```
 
 ### Evaluation Metrics

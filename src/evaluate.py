@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Dict, List
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel
 
-from src.prompts import build_prompt
-from src.metrics import json_valid, per_field_f1, exact_match
-from augmentation.utils import TARGET_KEYS
+from src.evaluate_finetuned import compute_metrics as compute_metrics_ft
 
 
 def load_config(config_path: str) -> Dict:
@@ -28,60 +28,107 @@ def load_test_rows(path: str) -> List[Dict]:
     return rows
 
 
-def generate_json(model, tok, event_text: str, max_new_tokens: int = 160) -> Dict:
-    prompt = build_prompt(event_text) + "\n"
-    inputs = tok(prompt, return_tensors="pt")
-    inputs = {k: v.to(model.device) for k, v in inputs.items()}
+def evaluate_model_on_sample(model, tokenizer, event_text: str, max_new_tokens: int = 150) -> str:
+    prompt = f"Extract calendar information from: {event_text}\nCalendar JSON:"
+    inputs = tokenizer(prompt, return_tensors="pt", padding=True)
     with torch.no_grad():
-        gen = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    out = tok.decode(gen[0], skip_special_tokens=True)
-    gen_text = out[len(prompt):]
-    try:
-        return json.loads(gen_text)
-    except Exception:
-        return {}
+        outputs = model.generate(
+            inputs.input_ids,
+            attention_mask=inputs.attention_mask,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+    full_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    generated_text = full_response[len(prompt):].strip()
+    return generated_text
 
 
 def main():
     import argparse
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description="Compare baseline vs fine-tuned on random test samples")
     p.add_argument("--config", type=str, default="configs/default.yaml")
-    p.add_argument("--model_dir", type=str, default="")
+    p.add_argument("--base_model_id", type=str, default="HuggingFaceTB/SmolLM-360M")
+    p.add_argument("--adapter_dir", type=str, default="simple_output/checkpoint-277")
+    p.add_argument("--sample_size", type=int, default=50)
+    p.add_argument("--output", type=str, default="results/comparison_evaluation.json")
     args = p.parse_args()
 
     cfg = load_config(args.config)
     test_path = cfg["paths"]["test"]
-    model_dir = args.model_dir or cfg["paths"]["outputs"]
 
-    tok = AutoTokenizer.from_pretrained(model_dir)
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(model_dir, device_map="auto")
+    # Load test data (prompt/completion format)
+    data = load_test_rows(test_path)
+    if not data:
+        print("No test data found.")
+        return
+    sample_size = min(args.sample_size, len(data))
+    test_sample = random.sample(data, sample_size)
 
-    rows = load_test_rows(test_path)
+    # Load base tokenizer/model
+    base_model_id = args.base_model_id
+    tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
-    n = 0
-    valid_json = 0
-    exact = 0
-    f1_sum = 0.0
+    base_model = AutoModelForCausalLM.from_pretrained(base_model_id, torch_dtype=torch.float32)
 
-    for r in rows:
-        n += 1
-        gold = r.get("output") or r.get("json") or {}
-        pred = generate_json(model, tok, r["event_text"], max_new_tokens=cfg["model"].get("max_new_tokens", 160))
-        if json_valid(pred):
-            valid_json += 1
-        f1, _ = per_field_f1(pred, gold)
-        f1_sum += f1
-        if exact_match(pred, gold):
-            exact += 1
+    # Load fine-tuned (base + adapters)
+    finetuned_model = AutoModelForCausalLM.from_pretrained(base_model_id, torch_dtype=torch.float32)
+    finetuned_model = PeftModel.from_pretrained(finetuned_model, args.adapter_dir)
 
-    print(json.dumps({
-        "count": n,
-        "json_valid": valid_json / max(n, 1),
-        "per_field_f1": f1_sum / max(n, 1),
-        "exact_match": exact / max(n, 1),
-    }, indent=2))
+    # Evaluate baseline and fine-tuned
+    print(f"Evaluating {sample_size} random test examples...")
+    baseline_predictions: List[str] = []
+    finetuned_predictions: List[str] = []
+    targets: List[Dict] = []
+
+    for i, example in enumerate(test_sample):
+        prompt_text = example["prompt"]
+        # recover the original event text from the prompt
+        event_text = prompt_text.replace("Extract calendar information from: ", "").replace("\\nCalendar JSON:", "")
+        target = json.loads(example["completion"]) if isinstance(example.get("completion"), str) else example.get("completion", {})
+
+        try:
+            b_pred = evaluate_model_on_sample(base_model, tokenizer, event_text, max_new_tokens=cfg["model"].get("max_new_tokens", 160))
+        except Exception:
+            b_pred = ""
+        try:
+            f_pred = evaluate_model_on_sample(finetuned_model, tokenizer, event_text, max_new_tokens=cfg["model"].get("max_new_tokens", 160))
+        except Exception:
+            f_pred = ""
+
+        baseline_predictions.append(b_pred)
+        finetuned_predictions.append(f_pred)
+        targets.append(target)
+
+    # Compute metrics using the shared metric function
+    baseline_metrics = compute_metrics_ft(baseline_predictions, targets)
+    finetuned_metrics = compute_metrics_ft(finetuned_predictions, targets)
+
+    # Save detailed results
+    Path("results").mkdir(exist_ok=True)
+    results = {
+        "test_samples": sample_size,
+        "baseline_metrics": baseline_metrics,
+        "finetuned_metrics": finetuned_metrics,
+    }
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+
+    # Print summary
+    def fmt(x: float) -> str:
+        try:
+            return f"{x:.3f}"
+        except Exception:
+            return str(x)
+
+    print("\nEvaluation summary (random sample):")
+    for metric in ["exact_match", "json_validity", "field_accuracy"]:
+        b = baseline_metrics.get(metric, 0.0)
+        ft = finetuned_metrics.get(metric, 0.0)
+        print(f"{metric}: baseline={fmt(b)}  finetuned={fmt(ft)}  delta={fmt(ft - b)}")
+    print(f"\nSaved detailed report to {args.output}")
 
 
 if __name__ == "__main__":
