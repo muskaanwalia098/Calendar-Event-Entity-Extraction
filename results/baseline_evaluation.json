@@ -1,0 +1,107 @@
+{
+  "model": "HuggingFaceTB/SmolLM-360M",
+  "test_samples": 50,
+  "metrics": {
+    "exact_match": 0.0,
+    "json_validity": 0.0,
+    "field_accuracy": 0.0,
+    "action_accuracy": 0.0,
+    "date_accuracy": 0.0,
+    "time_accuracy": 0.0,
+    "attendees_accuracy": 0.0,
+    "location_accuracy": 0.0,
+    "duration_accuracy": 0.0,
+    "recurrence_accuracy": 0.0,
+    "notes_accuracy": 0.0
+  },
+  "examples": [
+    {
+      "input": "Dinner with Zoe at The Steakhouse on May 14, 2024, 7:30 pm for 90 mins.\nCalendar JSON:",
+      "target": {
+        "action": "Dinner",
+        "date": "14/05/2024",
+        "time": "7:30 PM",
+        "attendees": [
+          "Zoe"
+        ],
+        "location": "The Steakhouse",
+        "duration": "90 mins",
+        "recurrence": null,
+        "notes": null
+      },
+      "prediction": "",
+      "predicted_json": null
+    },
+    {
+      "input": "Set lunch meeting 2023-10-29 12pm with John for 90 minutes.\nCalendar JSON:",
+      "target": {
+        "action": "Set lunch meeting",
+        "date": "2023-10-29",
+        "time": "12:00 PM",
+        "attendees": [
+          "John"
+        ],
+        "location": null,
+        "duration": "90 minutes",
+        "recurrence": null,
+        "notes": null
+      },
+      "prediction": "",
+      "predicted_json": null
+    },
+    {
+      "input": "Chat over strategy on April 29, 2024 at 12:30pm w/ Emma, Max, and Jane\nCalendar JSON:",
+      "target": {
+        "action": "Chat over strategy",
+        "date": "29/04/2024",
+        "time": "12:30 PM",
+        "attendees": [
+          "Emma",
+          "Max",
+          "Jane"
+        ],
+        "location": null,
+        "duration": null,
+        "recurrence": null,
+        "notes": null
+      },
+      "prediction": "",
+      "predicted_json": null
+    },
+    {
+      "input": "Weekly catch-up on 13 - March - 2024, 10:15am for 1 hour with Ava and Josh over Google Meet.\nCalendar JSON:",
+      "target": {
+        "action": "Weekly catch-up",
+        "date": "13/03/2024",
+        "time": "10:15 AM",
+        "attendees": [
+          "Ava",
+          "Josh"
+        ],
+        "location": "Google Meet",
+        "duration": "1 hour",
+        "recurrence": "weekly",
+        "notes": null
+      },
+      "prediction": "",
+      "predicted_json": null
+    },
+    {
+      "input": "Touch base w/ Tom 30th, Nov 2023 12:00 HQ 15min\nCalendar JSON:",
+      "target": {
+        "action": "Touch base",
+        "date": "30/11/2023",
+        "time": "12:00 PM",
+        "attendees": [
+          "Tom"
+        ],
+        "location": "HQ",
+        "duration": "15min",
+        "recurrence": null,
+        "notes": null
+      },
+      "prediction": "",
+      "predicted_json": null
+    }
+  ]
+}

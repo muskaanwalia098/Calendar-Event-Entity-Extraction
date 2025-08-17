@@ -1,0 +1,28 @@
+# Core ML dependencies optimized for Apple Silicon
+torch>=2.1.0
+transformers>=4.36.0
+peft>=0.7.0
+datasets>=2.16.0
+
+# MLX for Apple Silicon optimization (optional)
+mlx-lm>=0.0.8
+
+# Data processing
+pandas>=2.0.0
+numpy<2.0.0
+pyyaml>=6.0
+
+# Augmentation dependencies
+faker>=22.0.0
+python-dateutil>=2.8.0
+
+# Evaluation and logging
+tensorboard>=2.15.0
+scikit-learn>=1.3.0
+
+# Quantization (note: bitsandbytes doesn't support Apple MPS well)
+# We'll use CPU/MPS native quantization instead
+
+# Optional utilities
+tqdm>=4.65.0
+click>=8.0.0

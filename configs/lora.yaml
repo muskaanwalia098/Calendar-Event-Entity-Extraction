@@ -1,15 +1,18 @@
 lora:
-  r: 8
-  alpha: 16
-  dropout: 0.10
+  r: 16  # Conservative rank for stable training
+  alpha: 32  # Scaled alpha accordingly (2x rank)
+  dropout: 0.1  # Standard dropout for regularization
   target_modules:
     - q_proj
     - k_proj
     - v_proj
     - o_proj
+    - gate_proj  # Additional modules for better coverage
+    - up_proj
+    - down_proj
 qlora:
-  enabled: true
-  load_in_4bit: true
-  bnb_4bit_use_double_quant: true
+  enabled: false  # Disable QLoRA for MPS - use native LoRA instead
+  load_in_4bit: false
+  bnb_4bit_use_double_quant: false
   bnb_4bit_quant_type: nf4
-  bnb_4bit_compute_dtype: bfloat16
+  bnb_4bit_compute_dtype: float32  # Use float32 for MPS compatibility
