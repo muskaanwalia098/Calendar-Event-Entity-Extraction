@@ -12,7 +12,7 @@ This project implements a comprehensive pipeline for fine-tuning SmolLM-360M (a 
 
 1. **Data Augmentation Pipeline**: Sophisticated augmentation using entity replacement, template-based rendering, and Faker-generated synthetic examples to expand the dataset from ~792 to 2500+ examples.
 
-2. **Modular Architecture**: Structured codebase with separate modules for data processing (`augmentation/`), training (`src/`), configuration (`configs/`), and evaluation (`scripts/`).
+2. **Modular Architecture**: Structured codebase with separate modules for data processing (`augmentation/`), training and evaluation (`src/`), and configuration (`configs/`).
 
 3. **LoRA/QLoRA Fine-tuning**: Memory-efficient training using Low-Rank Adaptation, with automatic fallback to CPU-compatible configurations.
 
@@ -152,12 +152,10 @@ python -m augmentation.main --synth 1000 --seed 42
 
 ### Model Training
 ```bash
-# CPU/GPU training with LoRA (auto-detects hardware)
-python -m src.main --config configs/default.yaml --lora configs/lora.yaml
+# Working training script (LoRA; auto device handling)
+python -m src.simple_train
 
-# Monitor training progress
-tensorboard --logdir results/tb
-```
+
 
 ### Training Configuration
 - **CPU Training**: Automatically uses LoRA without quantization
@@ -169,8 +167,11 @@ tensorboard --logdir results/tb
 
 ### Model Evaluation on Test Set
 ```bash
-# Evaluate trained model on test split
-python scripts/evaluate.py --config configs/default.yaml --model_dir models/best/
+# Baseline evaluation (base model only)
+python -m src.evaluate_baseline
+
+# Fine-tuned vs baseline comparison (uses adapters in simple_output/checkpoint-277)
+python -m src.evaluate_finetuned
 
 # Quick single inference test
 python -m src.infer --model models/best/ --text "Meeting tomorrow at 2pm with John"
@@ -204,7 +205,7 @@ IK_NER_Finetuning/
 │   ├── augmentors.py            # Entity swapping logic
 │   ├── renderers.py             # JSON-to-text templates
 │   └── faker_synth.py           # Synthetic data generation
-├── src/                         # Training pipeline
+├── src/                         # Training, evaluation, and utilities
 │   ├── __init__.py
 │   ├── main.py                  # Training entrypoint
 │   ├── train.py                 # LoRA/QLoRA trainer
@@ -213,12 +214,16 @@ IK_NER_Finetuning/
 │   ├── metrics.py               # Evaluation metrics
 │   ├── loss.py                  # Custom loss functions
 │   ├── infer.py                 # Single inference CLI
-│   └── validate_json.py         # Schema validation helpers
+│   ├── validate_json.py         # Schema validation helpers
+│   ├── simple_train.py          # Working training script (use this)
+│   ├── test_model.py            # Interactive/CLI inference using adapters
+│   ├── evaluate_baseline.py     # Baseline evaluation
+│   ├── evaluate_finetuned.py    # Baseline vs fine-tuned comparison
 ├── configs/                     # Configuration files
 │   ├── default.yaml             # Training hyperparameters
 │   └── lora.yaml                # LoRA/QLoRA settings
-├── scripts/                     # Evaluation utilities
-│   └── evaluate.py              # Test set evaluation
+├── src/                         # Training, evaluation, and utilities
+│   ├── evaluate.py              # Test set evaluation
 ├── data/
 │   ├── raw/
 │   │   └── event_text_mapping.jsonl
@@ -268,14 +273,18 @@ lora:
 
 ### Loading Trained Model
 ```python
-# Load fine-tuned model for inference
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftModel
 
-model = AutoModelForCausalLM.from_pretrained("models/best/")
-tokenizer = AutoTokenizer.from_pretrained("models/best/")
+base_id = "HuggingFaceTB/SmolLM-360M"
+tokenizer = AutoTokenizer.from_pretrained(base_id)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
-# Single inference
-result = infer("Meeting tomorrow at 3pm with the team")
+base_model = AutoModelForCausalLM.from_pretrained(base_id)
+model = PeftModel.from_pretrained(base_model, "simple_output/checkpoint-277")
+
+# Then pass prompts to the model as in src/test_model.py
 ```
 ---
 

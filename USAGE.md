@@ -7,31 +7,37 @@
    source venv/bin/activate
    ```
 
-2. **Run the test script:**
+2. **Train the model (working path):**
    ```bash
-   python test_model.py
+   python -m src.simple_train
+   ```
+
+3. **Run the test script (interactive/CLI):**
+   ```bash
+   python -m src.test_model
    ```
 
 ## Usage Options
 
-### Option 1: Interactive Mode
+### Option 1: Train then interactive test
 ```bash
-python test_model.py
+python -m src.simple_train
+python -m src.test_model
 # Choose option 2 for interactive mode
 # Enter your own calendar events and see the results!
 ```
 
-### Option 2: Test with Examples
+### Option 2: Test with examples
 ```bash
-python test_model.py
+python -m src.test_model
 # Choose option 1 to see the model tested on preset examples
 ```
 
-### Option 3: Command Line Mode
+### Option 3: Command line mode
 ```bash
-python test_model.py "Meeting with team tomorrow at 2pm"
-python test_model.py "Lunch with Sarah on Friday at 12:30pm at the cafe"
-python test_model.py "Doctor appointment on Dec 15th at 3:00pm"
+python -m src.test_model "Meeting with team tomorrow at 2pm"
+python -m src.test_model "Lunch with Sarah on Friday at 12:30pm at the cafe"
+python -m src.test_model "Doctor appointment on Dec 15th at 3:00pm"
 ```
 
 ## Expected Output Format
@@ -49,7 +55,7 @@ The model extracts these fields:
 ## Example Session
 
 ```bash
-$ python test_model.py
+$ python -m src.test_model
 
 🎯 Calendar Event Entity Extraction - Test Script
 ============================================================
@@ -108,10 +114,10 @@ Based on our evaluation:
 If you get import errors:
 ```bash
 export PYTHONPATH=.
-python test_model.py
+python -m src.test_model
 ```
 
 If the model doesn't load:
 - Make sure you're in the Calendar-Event-Entity-Extraction directory
-- Check that `simple_output/checkpoint-277` exists
+- Check that `simple_output/checkpoint-277` exists (final model)
 - Verify the virtual environment is activated
