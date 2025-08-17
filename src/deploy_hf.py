@@ -247,15 +247,15 @@ Use null for unknown.
         
         # Robustly find the first complete JSON object in the output
         def _find_first_json(text: str):
-            start = text.find("{")
+            start = text.find("{{")
             if start == -1:
                 return None
             depth = 0
             for i in range(start, len(text)):
                 ch = text[i]
-                if ch == "{":
+                if ch == "{{":
                     depth += 1
-                elif ch == "}":
+                elif ch == "}}":
                     depth -= 1
                     if depth == 0:
                         return text[start:i+1]
@@ -270,7 +270,7 @@ Use null for unknown.
                 parsed = json.loads(json_part)
                 return json.dumps(parsed, indent=2, ensure_ascii=False)
             except json.JSONDecodeError:
-                return f"Generated (may need manual cleanup):\n{json_part}"
+                return f"Generated (may need manual cleanup):\n{{json_part}}"
         else:
             return "No JSON found.\n" + full_response
             
